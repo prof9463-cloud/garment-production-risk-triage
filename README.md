@@ -1,72 +1,86 @@
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1d0u_fj3UGVpI_wk1iOGAqKF5WXjoNgEa#scrollTo=hrvM2kgwaZab)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1d0u_fj3UGVpI_wk1iOGAqKF5WXjoNgEa)
 
-# Garment Production Risk Triage
+# Garment Production Risk-Triage: An Honest Proof-of-Concept
 
-An operational proof-of-concept prioritizing daily line-level interventions in apparel manufacturing. Rather than attempting to predict exact continuous productivity days in advance, this system acts as a **morning risk-triage sheet**—identifying the 10 highest-risk lines requiring immediate supervisor attention.
+*A small decision-support model for flagging which garment-factory production lines are at elevated risk of missing their daily target — built on public data, with as much attention paid to catching my own mistakes as to the final numbers.*
 
----
-
-## 1. Problem Framing & Operational Reality
-
-In high-volume garment manufacturing, production managers oversee dozens of sewing and finishing lines simultaneously. Two key operational realities define this environment:
-1. **Floor Bottlenecks Outpace Batch Data:** On the sewing floor, physical symptoms (WIP accumulating between workstations, machine downtime, sewing thread breaks) are visible to line supervisors in real time. Batch models cannot serve as early-warning systems for intra-day line balance.
-2. **Management by Exception:** Plant managers cannot physically audit 30+ lines during morning line balancing. What they need is a prioritized triage list: *Which lines have structural risk profiles that warrant intervention before the shift starts?*
+**The short version:**
+- A logistic regression model, honestly validated, catches 60% of real misses in its top 10 daily flags — 6x better than random guessing, using only historical data.
+- A more sophisticated model appeared to hit 90% — I didn't take that at face value, traced exactly where the improvement came from, and found something narrower and more specific than "a better model."
+- The most important finding didn't come from a notebook — it came from standing on an actual factory floor.
 
 ---
 
-## 2. Methodology & Leakage Prevention
+## Why this project
 
-* **Dataset:** 1,197 production shift records from a garment manufacturing plant.
-* **Target Metric:** Binary target miss ($$Actual\ Productivity < Targeted\ Productivity$$).
-* **Strict Chronological Evaluation:** Standard randomized `train_test_split` creates temporal data leakage. We implemented an 80/20 chronological split:
-  * **Train Set (80% / 957 shifts):** January 1, 2015 – February 26, 2015
-  * **Test Set (20% / 240 shifts):** February 26, 2015 – March 11, 2015
+Industrial engineering teams in garment factories work under a hard constraint: floor attention is scarce, and underperformance isn't distributed evenly across lines. This is a direct application of *management by exception* — surface the exceptions worth attention rather than monitoring every line equally.
 
-### Department-Level Missingness Audit
-A structural analysis revealed that the `wip` (work in progress) feature was missing for **100% of finishing department records** (506/506) while present in 100% of sewing records. Imputing or using `wip` directly would cause the model to use missingness as an artificial proxy for department identity. It was excluded from training.
+This project asks a narrow, testable question: given yesterday's production data, which team+department lines deserve extra attention today? It deliberately uses public data, not any employer's internal records, and treats "does this actually help" as an open question rather than an assumption.
+
+## Dataset
+
+UCI Machine Learning Repository #597 — *Productivity Prediction of Garment Employees* (Rahim, Imran & Ahmed, 2021). 1,197 shift records, 12 teams across sewing and finishing departments, one Bangladeshi factory, January–March 2015.
+
+## Methodology
+
+**Target:** `actual_productivity < targeted_productivity` — did this line miss its target that day.
+
+**Data audit, before any modeling:**
+- `department` — cleaned a raw text inconsistency that split one category into three inconsistent string values.
+- `wip` — **excluded.** Missing in 100% of finishing-department rows, 0% of sewing rows — a structural artifact of how the two departments are tracked, not random. Including it would just re-encode department.
+- `idle_time` / `idle_men` — **excluded.** Nonzero in only 1.5% of all rows.
+- `over_time`, `incentive` — retained, flagged as weak-to-null in their correlation with the outcome, with their exact timing relative to each day's result not fully resolvable from the data alone.
+
+**Validation: chronological, never random.** Train on the earliest ~80% of dates, test on the most recent ~20%. Team+department lines are repeated, time-ordered observations — a random split lets a model see nearby days from the same line and produces an inflated, unrealistic result. (This isn't theoretical: an early random split in this project inflated one result from an honest 30% to a misleading 60%, which is why chronological validation became non-negotiable.)
+
+**Metric: precision@10, not accuracy.** With misses at ~27% of shifts, a model that always predicts "safe" scores 75% accuracy while flagging nobody — useless for triage. Precision@10 asks the real operational question: of the 10 riskiest flagged shifts, how many are actual misses.
+
+## Results
+
+| Approach | Result | Notes |
+|---|---|---|
+| Always predict "safe" | 75.0% accuracy | Flags nobody — not a real baseline for this task. |
+| "Missed target yesterday?" (zero-cost lookup) | 50.0% precision (33/66 flagged) | The single most informative baseline in the project. |
+| Logistic regression (7 features, incl. lag) | 77.5% accuracy · **60% precision@10** | Headline interpretable model. |
+| Random Forest (100 trees, depth 4) | 80.0% accuracy · 90% precision@10 | See below — verified, then decomposed. |
+
+**What's actually driving Random Forest's number.** Instead of reporting 90% at face value, I checked what it was made of. Every one of Random Forest's correct catches shares the same "missed yesterday" flag as logistic regression's hits — it found zero cases where yesterday was safe but something else (SMV, overtime, staffing) signaled risk. Its real contribution is narrower: it learns team-specific base rates *within* the already-flagged population more precisely than logistic regression's single shared team coefficient allows — several of its top-ranked rows carry identical scores at the exact team+department+target-tier level, confirming this is a refinement in granularity, not a newly discovered pattern in the day's production data.
+
+## Floor reality — the most important limitation
+
+Direct observation on a real factory floor surfaced the constraint that matters most here: a line supervisor sees a stalled machine, piling work-in-progress, or an absent operator in real time, by eye. This model works from yesterday's end-of-day data — a full day behind. It is not a substitute for that kind of real-time judgment.
+
+Given that lag, the realistic use case is narrower than "predictive tool": a **morning macro-audit triage list for managers overseeing many lines**, who can't personally watch every line and already work from end-of-day reports — not a replacement for floor supervision.
+
+There's also a structural reason work like this rarely gets deployed in this industry: thin margins, constant style/SKU turnover, and a fragmented, mostly small-factory ownership structure that makes in-house data science capacity uncommon. That's an industry-economics explanation, not a comment on whether the method is sound.
+
+## Related work
+
+This dataset has real prior work, worth naming rather than implying this is untouched ground:
+- Binary target-vs-actual classification on this exact dataset already exists publicly.
+- SHAP-based explainability has already been applied to it separately.
+- A 2025 peer-reviewed paper classifies productivity into three tiers across eleven algorithms and pairs it with a linear-programming layer for **worker reallocation** across departments — more sophisticated modeling than this project, answering a genuinely different operational question.
+
+**What's different here:** a *floor-triage* framing for lines already staffed and running (not a reassignment question), strict chronological validation, precision@k as the evaluation metric, and a limitation — the real-time-vs-lagging-data gap — that only direct floor observation could have surfaced.
+
+## What this doesn't claim
+
+- Doesn't generalize beyond this one factory and this two-month window.
+- Doesn't claim overtime or incentive causally affect productivity — overtime's model coefficient was effectively zero, and no causal claim is supportable from observational data regardless.
+- Isn't deployment-ready.
+- Doesn't claim AI improves factory output — the model only modestly beats a free, zero-cost lookup rule, and no intervention was ever tested.
+
+## What I'd do next
+
+- Get informal validation from IE practitioners on whether the flagged output matches real-world triage decisions.
+- Test against factory-specific, more recent data if it ever becomes available.
+- Add uncertainty estimates, given the small number of teams and short time window.
+- Explore whether a more real-time data source could close the lag gap that limits the model's practical value.
+
+## Stack
+
+Python, pandas, scikit-learn, Google Colab. Implementation was AI-assisted; every methodological decision, validation design choice, and reported result was independently checked before being trusted — including catching and correcting an inflated result from an initial random train/test split.
 
 ---
 
-## 3. Benchmark & Precision@10 Results
-
-In an operational triage setting, whole-dataset accuracy is misleading due to class imbalance (75% baseline success rate). The operational metric that matters is **Precision@10**—out of the 10 highest-risk lines flagged each morning, how many actually missed their target?
-
-| Model | Test Accuracy | Precision@10 (Top 10 Flagged Lines) | Operational Interpretation |
-| :--- | :--- | :--- | :--- |
-| **Naive Baseline ("Always Safe")** | 75.00% | 0 / 10 (0%) | Assumes every line hits target; misses all failures. |
-| **Logistic Regression** | 77.50% | 6 / 10 (60%) | Flags general high-risk segments (finishing lines). |
-| **Random Forest (max_depth=4)** | **80.00%** | **9 / 10 (90%)** | Refines sorting within known high-risk categories. |
-
----
-
-## 4. Model Audit: What is Random Forest Actually Learning?
-
-To prevent overclaiming, we audited the specific rows caught by the Random Forest versus Logistic Regression:
-
-1. **Zero Unseen Signal:** All 9 of the Random Forest's true-positive catches had `yesterday_miss = 1`. The tree model did not uncover hidden nonlinear drivers (e.g., SMV or staffing variations) predicting misses from previously safe lines.
-2. **Team-Specific Base Rates:** With `max_depth=4`, the Random Forest isolated granular subgroup failure rates (e.g., *Finishing lines for Team 8 run structurally riskier than Team 6 when both missed target yesterday*).
-3. **Decision Utility:** While not discovering new physical signals, the model successfully resolves tie-breaking among flagged lines, directing limited supervisory resources with 90% precision.
-
----
-
-## 5. Sample Morning Triage Sheet Output
-
-Generated dynamically for floor supervisors prior to morning shift kick-off:
-
-| Line / Team | Department | Target Productivity | Yesterday Missed? | Risk Score | Triage Action |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **Team 8** | Finishing | 0.70 | YES | **75.0%** | **HIGH RISK** (Supervisor Audit) |
-| **Team 6** | Finishing | 0.70 | YES | **72.5%** | **HIGH RISK** (Supervisor Audit) |
-| **Team 10** | Finishing | 0.75 | YES | **66.2%** | **HIGH RISK** (Supervisor Audit) |
-| **Team 7** | Finishing | 0.65 | NO | **53.1%** | **HIGH RISK** (Monitor Line Balance) |
-| **Team 7** | Sewing | 0.65 | NO | **52.5%** | **HIGH RISK** (Monitor Line Balance) |
-| **Team 8** | Sewing | 0.70 | NO | **52.1%** | **HIGH RISK** (Monitor Line Balance) |
-| Team 2 | Finishing | 0.75 | NO | 36.8% | NORMAL |
-| Team 12 | Finishing | 0.80 | NO | 34.1% | NORMAL |
-
----
-
-## 6. How to Run
-
-1. Open the interactive Colab notebook: [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1d0u_fj3UGVpI_wk1iOGAqKF5WXjoNgEa#scrollTo=hrvM2kgwaZab)
-2. Run all cells sequentially to reproduce the temporal split, audit logs, and morning floor triage table.
+*Author: Majbha Uddin · [LinkedIn](https://www.linkedin.com/in/majbhauddin) · [Notebook](https://github.com/prof9463-cloud/garment-production-risk-triage/blob/main/Garment_productivity_project.ipynb)*
