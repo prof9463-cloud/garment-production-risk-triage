@@ -1,5 +1,3 @@
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1d0u_fj3UGVpI_wk1iOGAqKF5WXjoNgEa)
-
 # Garment Production Risk-Triage: An Honest Proof-of-Concept
 
 *A small decision-support model for flagging which garment-factory production lines are at elevated risk of missing their daily target — built on public data, with as much attention paid to catching my own mistakes as to the final numbers.*
@@ -66,16 +64,21 @@ This dataset has real prior work, worth naming rather than implying this is unto
 ## What this doesn't claim
 
 - Doesn't generalize beyond this one factory and this two-month window.
-- Doesn't claim overtime or incentive causally affect productivity — overtime's model coefficient was effectively zero, and no causal claim is supportable from observational data regardless.
+- Doesn't claim overtime or incentive causally affect productivity — overtime's model coefficient was effectively zero, and no causal claim is supportable from observational data regardless. (In practice, overtime in this industry is driven by order books and shipment deadlines, not model output — this caveat guards against a naive misreading of the numbers more than it reflects a real decision risk on the floor.)
 - Isn't deployment-ready.
 - Doesn't claim AI improves factory output — the model only modestly beats a free, zero-cost lookup rule, and no intervention was ever tested.
+
+## The honest ceiling — and what survives it
+
+No public, retrospective dataset — this one included — can prove that a model like this would actually help a real factory. Proving that requires an intervention: flag lines, have someone act on the flags, and measure whether misses actually drop compared to lines that weren't flagged. That is not a gap this project failed to close through better modeling. It is a gap no dataset assembled after the fact can close, in this or any field — the same ceiling applies to most observational research generally, and very likely to the 2025 paper cited above as well, which also reports offline metrics rather than a live trial.
+
+A factory running 40–50 IE staff under a manager with 15 years of experience almost certainly already tracks daily line performance closely. What a project like this could plausibly add, given real data and a real trial, isn't replacing that expertise — it's testing whether formalizing informal, one-person pattern recognition into something explicit and consistent across a much larger operation than any one manager can hold in their head adds anything measurable. That is a real, testable question. It is also one that no public dataset, including this one, can answer.
 
 ## What I'd do next
 
 - Get informal validation from IE practitioners on whether the flagged output matches real-world triage decisions.
-- Test against factory-specific, more recent data if it ever becomes available.
 - Add uncertainty estimates, given the small number of teams and short time window.
-- Explore whether a more real-time data source could close the lag gap that limits the model's practical value.
+- Note explicitly what more historical data would and wouldn't fix: it would sharpen these same offline metrics, but it would still be observational — the only step that actually resolves the open question above is a live trial with real decisions and measured outcomes, not a larger CSV.
 
 ## Stack
 
@@ -83,4 +86,4 @@ Python, pandas, scikit-learn, Google Colab. Implementation was AI-assisted; ever
 
 ---
 
-*Author: Majbha Uddin · [LinkedIn](https://www.linkedin.com/in/majbhauddin) · [Notebook](https://github.com/prof9463-cloud/garment-production-risk-triage/blob/main/Garment_productivity_project.ipynb)*
+*Author: Majbha Uddin · [LinkedIn](https://www.linkedin.com/in/majbha-uddin-62a264219) · [Notebook](Garment_productivity_project.ipynb) · [Open in Colab](https://colab.research.google.com/drive/1d0u_fj3UGVpI_wk1iOGAqKF5WXjoNgEa)*
